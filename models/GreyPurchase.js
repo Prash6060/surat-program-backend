@@ -41,6 +41,10 @@ const greyPurchaseSchema = new mongoose.Schema({
     type: String,
     required: true,
   },
+  canBeModified: { // New attribute added
+    type: Boolean,
+    default: true, // Default value is true
+  }
 }, { timestamps: true }); // Automatically add createdAt and updatedAt fields
 
 const GreyPurchase = mongoose.model('GreyPurchase', greyPurchaseSchema);

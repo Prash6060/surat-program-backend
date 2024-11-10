@@ -11,9 +11,12 @@ router.get("/view-quality", authController.ViewQuality)
 
 router.post("/add-grey-purchase", authController.AddGreyPurchase);
 router.get("/view-grey-purchase",authController.ViewGreyPurchase)
+router.get("/view-grey-purchase-by-challan/:challan",authController.ViewGreyPurchaseByChallan);
+router.put('/modify-grey-purchase/:id', authController.ModifyGreyPurchase);
 
 router.post("/add-grey-stock",authController.AddGreyStock);
 router.get("/view-grey-stock",authController.ViewGreyStock);
+router.get("/view-grey-stock-by-challan/:challan", authController.ViewGreyStockByChallan);
 router.get("/available-grey-quality",authController.AvailableGreyQuality);
 router.get("/view-pending-stock",authController.ViewPendingStock);
 

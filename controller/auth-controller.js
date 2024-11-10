@@ -250,6 +250,8 @@ exports.AvailableGreyQuality = async (req, res) => {
     const availableGreyQualities = greyStocks.map(stock => ({
       quality: stock.grey_purchase_quality,
       challan: stock.grey_purchase_challan,
+      sent_to : stock.grey_sent_to,
+      total_roll : stock.grey_purchase_total_roll,
       display: `${stock.grey_purchase_quality} ${stock.grey_purchase_challan}`
     }));
 
@@ -269,109 +271,120 @@ exports.AvailableGreyQuality = async (req, res) => {
 
 // Add Dye Inward Entry
 exports.AddDyeInward = async (req, res) => {
-    const session = await GreyStock.startSession();
-    session.startTransaction();
+  const session = await GreyStock.startSession();
+  session.startTransaction();
 
-    try {
-        const { dye_from, grey_details } = req.body;
+  try {
+      const { dye_from, grey_details, dye_receive_date } = req.body;
 
-        // Validate required fields
-        if (!dye_from || !Array.isArray(grey_details) || grey_details.length === 0) {
-            return res.status(400).json({
-                msg: 'dye_from is required and grey_details must be a non-empty array.'
-            });
-        }
+      // Validate required fields
+      if (!dye_from || !Array.isArray(grey_details) || grey_details.length === 0) {
+          return res.status(400).json({
+              msg: 'dye_from is required and grey_details must be a non-empty array.'
+          });
+      }
 
-        // Create an array to hold stock items for TejasStock
-        const stockArray = [];
+      // Check if dye_receive_date is provided, default to current date if not
+      const receiveDate = dye_receive_date || new Date();
 
-        // Process each grey detail entry
-        for (const greyDetail of grey_details) {
-            const { grey_challan, grey_roll, grey_quality, grey_amt } = greyDetail;
+      // Create an array to hold stock items for TejasStock
+      const stockArray = [];
 
-            // Find the corresponding grey stock entry by grey_challan
-            const greyStock = await GreyStock.findOne({ grey_purchase_challan: grey_challan }).session(session);
+      // Process each grey detail entry
+      for (const greyDetail of grey_details) {
+          const { grey_challan, grey_roll, grey_quality, grey_amt } = greyDetail;
 
-            if (!greyStock) {
-                await session.abortTransaction();
-                session.endSession();
-                return res.status(404).json({ msg: `Grey stock not found for challan: ${grey_challan}` });
-            }
+          // Find the corresponding grey stock entry by grey_challan
+          const greyStock = await GreyStock.findOne({ grey_purchase_challan: grey_challan }).session(session);
 
-            // Check required fields in greyStock to avoid validation errors
-            if (!greyStock.grey_purchase_from || !greyStock.grey_sent_to) {
-                await session.abortTransaction();
-                session.endSession();
-                return res.status(400).json({
-                    msg: `Required fields missing in grey stock for challan ${grey_challan}. Ensure 'grey_purchase_from' and 'grey_sent_to' are set.`
-                });
-            }
+          if (!greyStock) {
+              await session.abortTransaction();
+              session.endSession();
+              return res.status(404).json({ msg: `Grey stock not found for challan: ${grey_challan}` });
+          }
 
-            // Check if grey_roll exceeds available grey_purchase_total_roll
-            if (grey_roll > greyStock.grey_purchase_total_roll) {
-                await session.abortTransaction();
-                session.endSession();
-                return res.status(400).json({
-                    msg: `Roll count exceeds available stock of ${greyStock.grey_purchase_total_roll} for challan ${grey_challan}`
-                });
-            }
+          // Find and update the related GreyPurchase object by grey_challan
+          const greyPurchase = await GreyPurchase.findOne({ grey_challan_no: grey_challan }).session(session);
+          if (greyPurchase) {
+              greyPurchase.canBeModified = false;
+              await greyPurchase.save({ session });
+          }
 
-            // Deduct grey_roll from grey_purchase_total_roll
-            greyStock.grey_purchase_total_roll -= grey_roll;
+          // Check required fields in greyStock to avoid validation errors
+          if (!greyStock.grey_purchase_from || !greyStock.grey_sent_to) {
+              await session.abortTransaction();
+              session.endSession();
+              return res.status(400).json({
+                  msg: `Required fields missing in grey stock for challan ${grey_challan}. Ensure 'grey_purchase_from' and 'grey_sent_to' are set.`
+              });
+          }
 
-            // Save the updated grey stock entry with session to ensure atomicity
-            await greyStock.save({ session });
+          // Check if grey_roll exceeds available grey_purchase_total_roll
+          if (grey_roll > greyStock.grey_purchase_total_roll) {
+              await session.abortTransaction();
+              session.endSession();
+              return res.status(400).json({
+                  msg: `Roll count exceeds available stock of ${greyStock.grey_purchase_total_roll} for challan ${grey_challan}`
+              });
+          }
 
-            // Add to the stock array for TejasStock creation
-            stockArray.push({
-                grey_quality: grey_quality,
-                total_roll: grey_roll,
-                total_fns_mtr: greyDetail.grey_fns_mtr, // Assuming this field exists in greyDetail
-                total_amt: grey_amt
-            });
-        }
+          // Deduct grey_roll from grey_purchase_total_roll
+          greyStock.grey_purchase_total_roll -= grey_roll;
 
-        // Create a new Dye Inward entry
-        const dyeInwardEntry = new DyeInward({
-            dye_from,
-            grey_details,
-            createdAt: new Date(),
-            updatedAt: new Date()
-        });
+          // Save the updated grey stock entry with session to ensure atomicity
+          await greyStock.save({ session });
 
-        // Save the dye inward entry to the database with session for transaction integrity
-        await dyeInwardEntry.save({ session });
+          // Add to the stock array for TejasStock creation
+          stockArray.push({
+              grey_quality: grey_quality,
+              total_roll: grey_roll,
+              total_fns_mtr: greyDetail.grey_fns_mtr, // Assuming this field exists in greyDetail
+              total_amt: grey_amt
+          });
+      }
 
-        // Create a new TejasStock entry
-        const tejasStockEntry = new TejasStock({
-            received_from: dye_from,
-            date_of_receive: new Date(),
-            stock_array: stockArray
-        });
+      // Create a new Dye Inward entry
+      const dyeInwardEntry = new DyeInward({
+          dye_from,
+          grey_details,
+          dye_receive_date: receiveDate, // Add the dye_receive_date field here
+          createdAt: new Date(),
+          updatedAt: new Date()
+      });
 
-        // Save the TejasStock entry to the database with session for transaction integrity
-        await tejasStockEntry.save({ session });
+      // Save the dye inward entry to the database with session for transaction integrity
+      await dyeInwardEntry.save({ session });
 
-        // Commit the transaction
-        await session.commitTransaction();
-        session.endSession();
+      // Create a new TejasStock entry
+      const tejasStockEntry = new TejasStock({
+          received_from: dye_from,
+          date_of_receive: receiveDate, // Set the same receive date for TejasStock entry
+          stock_array: stockArray
+      });
 
-        return res.status(201).json({
-            msg: 'Dye inward entry and TejasStock created successfully',
-            data: {
-                dyeInward: dyeInwardEntry,
-                tejasStock: tejasStockEntry
-            }
-        });
-    } catch (error) {
-        await session.abortTransaction();
-        session.endSession();
-        console.error('Error adding dye inward entry:', error);
-        return res.status(500).json({
-            msg: 'Failed to create dye inward entry and TejasStock',
-            error: error.message
-        });
-    }
+      // Save the TejasStock entry to the database with session for transaction integrity
+      await tejasStockEntry.save({ session });
+
+      // Commit the transaction
+      await session.commitTransaction();
+      session.endSession();
+
+      return res.status(201).json({
+          msg: 'Dye inward entry and TejasStock created successfully',
+          data: {
+              dyeInward: dyeInwardEntry,
+              tejasStock: tejasStockEntry
+          }
+      });
+  } catch (error) {
+      await session.abortTransaction();
+      session.endSession();
+      console.error('Error adding dye inward entry:', error);
+      return res.status(500).json({
+          msg: 'Failed to create dye inward entry and TejasStock',
+          error: error.message
+      });
+  }
 };
 
 // View Tejas Stock Entries
@@ -470,5 +483,121 @@ exports.ViewQuality = async (req, res) => {
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: 'Server error', error });
+  }
+};
+
+// Controller function to view grey purchase by challan
+exports.ViewGreyPurchaseByChallan = async (req, res) => {
+  try {
+    const { challan } = req.params;  // Extract challan from URL params
+
+    // Find the grey purchase with the specified challan number
+    const greyPurchase = await GreyPurchase.findOne({ grey_challan_no: challan });
+
+    if (!greyPurchase) {
+      return res.status(404).json({ message: 'Grey purchase not found' });
+    }
+
+    // Return the grey purchase details
+    res.status(200).json({ data: greyPurchase });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Server error' });
+  }
+};
+
+// View grey stock by challan number
+exports.ViewGreyStockByChallan = async (req, res) => {
+  try {
+    const { challan } = req.params; // Get the challan number from the URL
+
+    // Find the grey stock entry with the given challan number
+    const greyStock = await GreyStock.findOne({ grey_purchase_challan: challan });
+
+    // Check if the grey stock entry exists
+    if (!greyStock) {
+      return res.status(404).json({ message: 'Grey stock entry not found' });
+    }
+
+    // Respond with the grey stock data
+    res.status(200).json({
+      message: 'Grey stock entry fetched successfully',
+      data: greyStock,
+    });
+  } catch (error) {
+    console.error('Error fetching grey stock entry by challan:', error);
+    res.status(500).json({
+      message: 'Server error while fetching grey stock entry',
+      error: error.message,
+    });
+  }
+};
+
+
+exports.ModifyGreyPurchase = async (req, res) => {
+  try {
+    const { id } = req.params; // Purchase ID from URL
+    const updatedData = req.body; // Updated data from the request body
+
+    console.log("Data to be modified:", updatedData); // Log the incoming data for verification
+
+    // Fetch the existing GreyPurchase record
+    const greyPurchase = await GreyPurchase.findById(id);
+    if (!greyPurchase) {
+      return res.status(404).json({ message: 'Grey purchase not found' });
+    }
+
+    // Determine if quality, total roll, date of purchase, or bill number has changed
+    const isQualityChanged = updatedData.grey_purchase_quality && updatedData.grey_purchase_quality !== greyPurchase.grey_purchase_quality;
+    const isTotalRollChanged = updatedData.grey_total_roll && updatedData.grey_total_roll !== greyPurchase.grey_total_roll;
+    const isDateOfPurchaseChanged = updatedData.grey_date_of_purchase && updatedData.grey_date_of_purchase !== greyPurchase.grey_date_of_purchase;
+    const isBillNoChanged = updatedData.grey_bill_no && updatedData.grey_bill_no !== greyPurchase.grey_bill_no;
+
+    console.log("isQualityChanged:", isQualityChanged);
+    console.log("isTotalRollChanged:", isTotalRollChanged);
+    console.log("isDateOfPurchaseChanged:", isDateOfPurchaseChanged);
+    console.log("isBillNoChanged:", isBillNoChanged);
+
+    // Update the GreyPurchase record with new data
+    Object.assign(greyPurchase, updatedData);
+    await greyPurchase.save();
+
+    // If any of the fields have changed (quality, total roll, date of purchase, bill no), update the corresponding GreyStock
+    if (isQualityChanged || isTotalRollChanged || isDateOfPurchaseChanged || isBillNoChanged) {
+      const greyStock = await GreyStock.findOne({ grey_purchase_challan: greyPurchase.grey_challan_no });
+
+      if (greyStock) {
+        // Prepare update fields for GreyStock
+        const greyStockUpdateFields = {};
+
+        if (isQualityChanged) {
+          greyStockUpdateFields.grey_purchase_quality = updatedData.grey_purchase_quality;
+        }
+        if (isTotalRollChanged) {
+          greyStockUpdateFields.grey_purchase_total_roll = updatedData.grey_total_roll;
+        }
+        if (isDateOfPurchaseChanged) {
+          greyStockUpdateFields.grey_purchase_date = updatedData.grey_date_of_purchase;
+        }
+        if (isBillNoChanged) {
+          greyStockUpdateFields.grey_purchase_billno = updatedData.grey_bill_no;
+        }
+
+        console.log("Fields to update in GreyStock:", greyStockUpdateFields); // Debugging output
+
+        // Apply updates to GreyStock
+        Object.assign(greyStock, greyStockUpdateFields);
+        await greyStock.save();
+      } else {
+        // Handle case if there's no GreyStock record linked with the challan number
+        return res.status(404).json({ message: 'Grey stock record not found for this challan number' });
+      }
+    }
+
+    return res.status(200).json({ message: 'Grey purchase and stock updated successfully' });
+
+  } catch (error) {
+    console.error('Error modifying grey purchase:', error);
+    return res.status(500).json({ message: 'An error occurred while modifying the grey purchase' });
   }
 };

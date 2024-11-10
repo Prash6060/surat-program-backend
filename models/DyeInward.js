@@ -43,6 +43,11 @@ const dyeInwardSchema = new mongoose.Schema({
         required: true,
     },
     grey_details: [greyQualitySchema], // Array of grey quality details
+    dye_receive_date: {
+        type: Date, // Add dye_receive_date as a Date type field
+        required: true,
+        default: Date.now, // Optionally set default to current date
+    },
 }, {
     timestamps: true, // Automatically add createdAt and updatedAt fields
 });
