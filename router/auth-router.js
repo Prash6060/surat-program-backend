@@ -9,6 +9,9 @@ router.get("/view-dye-parties", authController.ViewDyeParties);
 router.post("/add-quality", authController.AddQuality)
 router.get("/view-quality", authController.ViewQuality)
 
+router.post("/add-firm", authController.AddFirm);
+router.get("/view-firm", authController.ViewFirm);
+
 router.post("/add-grey-purchase", authController.AddGreyPurchase);
 router.get("/view-grey-purchase",authController.ViewGreyPurchase)
 router.get("/view-grey-purchase-by-challan/:challan",authController.ViewGreyPurchaseByChallan);

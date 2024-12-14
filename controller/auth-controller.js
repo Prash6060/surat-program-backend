@@ -5,6 +5,7 @@ const GreyStock = require('../models/GreyStock');
 const DyeInward = require("../models/DyeInward");
 const TejasStock = require('../models/TejasStock');
 const Quality = require("../models/Quality");
+const Firm = require('../models/Firm'); // Import the Firm model
 
 // Controller to view grey parties
 exports.ViewGreyParties = async (req, res) => {
@@ -603,5 +604,50 @@ exports.ModifyGreyPurchase = async (req, res) => {
   } catch (error) {
     console.error('Error modifying grey purchase:', error);
     return res.status(500).json({ message: 'An error occurred while modifying the grey purchase' });
+  }
+};
+
+exports.AddFirm = async (req, res) => {
+  try {
+    const { firmName } = req.body;
+
+    // Check if firm name is provided
+    if (!firmName) {
+      return res.status(400).json({ message: 'Firm name is required' });
+    }
+
+    // Check if firm already exists
+    const existingFirm = await Firm.findOne({ firmName });
+    if (existingFirm) {
+      return res.status(400).json({ message: 'Firm already exists' });
+    }
+
+    // Create a new firm
+    const newFirm = new Firm({ firmName });
+
+    // Save the firm to the database
+    await newFirm.save();
+
+    return res.status(201).json({ message: 'Firm added successfully', firm: newFirm });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ message: 'Server error' });
+  }
+};
+
+exports.ViewFirm = async (req, res) => {
+  try {
+    // Fetch all firms from the database
+    const firms = await Firm.find(); 
+
+    if (!firms || firms.length === 0) {
+      return res.status(404).json({ message: 'No firms found.' });
+    }
+
+    // Send the list of firms as a response
+    res.status(200).json(firms);
+  } catch (error) {
+    console.error('Error fetching firms:', error);
+    res.status(500).json({ message: 'Error retrieving firms.' });
   }
 };
