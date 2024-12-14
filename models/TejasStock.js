@@ -30,6 +30,10 @@ const tejasStockSchema = new mongoose.Schema({
         type: Date,
         required: true,
     },
+    challan: {
+        type: String,
+        required: true, // Add challan field
+    },
     stock_array: [stockItemSchema] // Array of stockItemSchema
 }, {
     timestamps: true // Automatically add createdAt and updatedAt fields

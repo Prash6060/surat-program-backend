@@ -347,7 +347,7 @@ exports.AddDyeInward = async (req, res) => {
       const dyeInwardEntry = new DyeInward({
           dye_from,
           grey_details,
-          dye_receive_date: receiveDate, // Add the dye_receive_date field here
+          dye_receive_date: receiveDate,
           createdAt: new Date(),
           updatedAt: new Date()
       });
@@ -355,12 +355,16 @@ exports.AddDyeInward = async (req, res) => {
       // Save the dye inward entry to the database with session for transaction integrity
       await dyeInwardEntry.save({ session });
 
-      // Create a new TejasStock entry
+      // Collect the first grey_challan for the TejasStock entry (or adjust for multiple challans)
+      const firstChallan = grey_details[0]?.grey_challan || null;
+
       const tejasStockEntry = new TejasStock({
           received_from: dye_from,
-          date_of_receive: receiveDate, // Set the same receive date for TejasStock entry
+          date_of_receive: receiveDate,
+          challan: firstChallan, // Use the first grey_challan
           stock_array: stockArray
       });
+
 
       // Save the TejasStock entry to the database with session for transaction integrity
       await tejasStockEntry.save({ session });
